@@ -1,7 +1,9 @@
 import { Builder, By, ThenableWebDriver } from 'selenium-webdriver';
-import Chrome from 'selenium-webdriver/chrome';
+const chrome = require('selenium-webdriver/chrome');
 import chalk from 'chalk';
 import PinterestError from './errorHandler';
+import https from 'https';
+import http from 'http';
 
 /**
  * @class Pinterest
@@ -32,10 +34,10 @@ export default class Pinterest {
         this.driver = new Builder()
             .forBrowser('chrome')
             .setChromeOptions(
-                new Chrome.Options()
+                new chrome.Options()
                     .windowSize({ width: 1920, height: 1080 })
                     .addArguments('--headless')
-                    .addArguments('disable-gpu', 'log-level=3')
+                    .addArguments('--disable-gpu', '--log-level=3')
             )
             .build();
         this.userAgent = this.driver.executeScript("return navigator.userAgent;");
@@ -147,7 +149,10 @@ export default class Pinterest {
 
         var returnedImages: string[] = this.getImages();
         if (returnedImages.length == 0) return [];
-        return returnedImages;
+        
+        // Filter out inaccessible images (403, 404, etc.)
+        const accessibleImages = await this.filterAccessibleImages(returnedImages);
+        return accessibleImages;
     };
 
 
@@ -207,6 +212,91 @@ export default class Pinterest {
     getDriver(): ThenableWebDriver {
         return this.driver;
     };
+
+    /**
+     * @method checkUrlAccessibility
+     * @description Checks if a URL is accessible (not returning 403 or other error codes).
+     * @param {string} url
+     * @returns {Promise<boolean>}
+     * @memberof Pinterest
+     * @private
+     * @example const isAccessible = await pinterest.checkUrlAccessibility("https://i.pinimg.com/originals/1d/88/15/1d88157b506a254dbc1b7b1bfb0d9684.jpg");
+     */
+    private async checkUrlAccessibility(url: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            const request = url.startsWith('https:') ? https : http;
+            const options = {
+                method: 'HEAD',
+                timeout: 5000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            };
+
+            const req = request.get(url, options, (res) => {
+                // Consider 200-299 as successful, anything else as inaccessible
+                const isAccessible = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
+                resolve(isAccessible);
+            });
+
+            req.on('error', () => {
+                resolve(false);
+            });
+
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(false);
+            });
+
+            req.setTimeout(5000);
+        });
+    }
+
+    /**
+     * @method filterAccessibleImages
+     * @description Filters out inaccessible image URLs (403, 404, etc.)
+     * @param {string[]} imageUrls
+     * @returns {Promise<string[]>}
+     * @memberof Pinterest
+     * @private
+     * @example const accessibleImages = await pinterest.filterAccessibleImages(imageUrls);
+     */
+    private async filterAccessibleImages(imageUrls: string[]): Promise<string[]> {
+        console.log(chalk.yellow(`Checking accessibility of ${imageUrls.length} images...`));
+        const accessibleImages: string[] = [];
+        let checkedCount = 0;
+
+        // Check URLs in batches to avoid overwhelming the server
+        const batchSize = 10;
+        for (let i = 0; i < imageUrls.length; i += batchSize) {
+            const batch = imageUrls.slice(i, i + batchSize);
+            const promises = batch.map(async (url) => {
+                const isAccessible = await this.checkUrlAccessibility(url);
+                checkedCount++;
+                
+                if (checkedCount % 10 === 0 || checkedCount === imageUrls.length) {
+                    console.log(chalk.blue(`Checked ${checkedCount}/${imageUrls.length} images`));
+                }
+                
+                return { url, isAccessible };
+            });
+
+            const results = await Promise.all(promises);
+            for (const result of results) {
+                if (result.isAccessible) {
+                    accessibleImages.push(result.url);
+                }
+            }
+
+            // Small delay between batches to be respectful to the server
+            if (i + batchSize < imageUrls.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        console.log(chalk.green(`Filtered ${accessibleImages.length} accessible images out of ${imageUrls.length} total`));
+        return accessibleImages;
+    }
 
     /**
     * @method replacer

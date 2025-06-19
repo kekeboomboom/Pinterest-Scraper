@@ -1,12 +1,13 @@
 {
-  "name": "pinterest-scraper",
-  "version": "1.0.0",
-  "description": "Web Scraper Application for Pinterest, Made Using TypeScript-Based Selenium Web Driver, Allows You to Extract a Specified or Unlimited Amount of Data via the Pinterest URL You Specify.",
-  "main": "src/index.ts",
+  "name": "pinterest-scraper-api",
+  "version": "2.0.0",
+  "description": "Pinterest Scraper API - RESTful service for scraping Pinterest images by category",
+  "main": "dist/app.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node dist/app.js",
+    "dev": "nodemon --exec ts-node src/app.ts",
     "build": "tsc --outDir ./dist",
-    "build:start": "npm run build && node ./dist/src/index.js"
+    "build:start": "npm run build && npm start"
   },
   "funding": {
     "type": "individual",
@@ -18,8 +19,10 @@
   },
   "keywords": [
     "pinterest",
-    "pin",
+    "api",
     "scraper",
+    "rest",
+    "express",
     "selenium",
     "typescript",
     "nodejs",
@@ -27,7 +30,7 @@
     "web-scraping",
     "pinterest-scraper",
     "selenium-webdriver",
-    "selenium-scraper"
+    "pinterest-api"
   ],
   "author": {
     "name": "Bes-js",
@@ -37,11 +40,16 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "dotenv": "^16.4.5",
-    "selenium-webdriver": "^4.18.1"
+    "selenium-webdriver": "^4.18.1",
+    "express": "^4.18.0",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
     "@types/selenium-webdriver": "^4.1.22",
+    "@types/express": "^4.17.0",
+    "@types/cors": "^2.8.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.3"
+    "typescript": "^5.4.3",
+    "nodemon": "^2.0.0"
   }
 }
