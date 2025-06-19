@@ -15,7 +15,9 @@ RUN npm ci
 COPY . .
 
 # Build the application
+WORKDIR /app/src
 RUN npm run build
+WORKDIR /app
 
 # Stage 2: Create the production image
 FROM node:18-alpine
@@ -47,7 +49,7 @@ COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # Copy built application from the builder stage
-COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/dist/src ./dist
 
 # Create logs directory and set permissions
 RUN mkdir -p logs && chown -R nodejs:nodejs logs
