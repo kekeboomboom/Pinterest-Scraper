@@ -83,9 +83,12 @@ export default class PinterestService {
    */
   private async initializeBrowser(): Promise<void> {
     const headless = process.env.CHROME_HEADLESS !== 'false';
-    
+
+    const serviceBuilder = new chrome.ServiceBuilder('/usr/bin/chromedriver');
+
     this.driver = new Builder()
       .forBrowser('chrome')
+      .setChromeService(serviceBuilder)
       .setChromeOptions(
         new chrome.Options()
           .windowSize({ width: 1920, height: 1080 })

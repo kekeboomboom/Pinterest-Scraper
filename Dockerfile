@@ -25,6 +25,7 @@ FROM node:18-alpine
 # Install Chrome dependencies for Selenium
 RUN apk add --no-cache \
     chromium \
+    chromium-chromedriver \
     nss \
     freetype \
     freetype-dev \
