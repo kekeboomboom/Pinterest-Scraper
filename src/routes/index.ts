@@ -5,10 +5,10 @@ const router = Router();
 const scrapeController = new ScrapeController();
 
 // POST /api/scrape - Main scraping endpoint
-router.post('/scrape', scrapeController.scrapeByCategory.bind(scrapeController));
+router.post('/scrape', scrapeController.getImages.bind(scrapeController));
 
-// GET /api/scrape/:category - Alternative GET endpoint
-router.get('/scrape/:category', scrapeController.scrapeByCategoryGet.bind(scrapeController));
+// GET /api/scrape - Alternative GET endpoint
+router.get('/scrape', scrapeController.getImagesGet.bind(scrapeController));
 
 // GET /api/health - Health check endpoint
 router.get('/health', scrapeController.healthCheck.bind(scrapeController));

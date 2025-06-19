@@ -7,16 +7,16 @@ export interface PinterestDeclaration {
 
 // API Types
 export interface ScrapeOptions {
-  category: string;
+  category?: string;
   limit?: number;
   quality?: 'high' | 'medium' | 'low';
 }
 
 export interface ScrapeResult {
-  category: string;
+  category?: string;
   totalImages: number;
   images: string[];
-  processingTime: string;
+  processingTime?: string;
 }
 
 export interface ApiResponse<T = any> {

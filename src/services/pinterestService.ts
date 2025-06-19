@@ -1,4 +1,4 @@
-import { Builder, By, ThenableWebDriver } from 'selenium-webdriver';
+import { Builder, By, ThenableWebDriver, until } from 'selenium-webdriver';
 const chrome = require('selenium-webdriver/chrome');
 import chalk from 'chalk';
 import PinterestError from './errorHandler';
@@ -13,49 +13,71 @@ import http from 'http';
 export default class PinterestService {
   private driver: ThenableWebDriver | null = null;
   private pinList: string[] = [];
+  private static instance: PinterestService;
+  private initializationPromise: Promise<void> | null = null;
 
-  constructor() {}
+  private constructor() {}
+
+  public static getInstance(): PinterestService {
+    if (!PinterestService.instance) {
+      PinterestService.instance = new PinterestService();
+    }
+    return PinterestService.instance;
+  }
 
   /**
-   * Main method to scrape Pinterest images by category
+   * Main method to scrape images from Pinterest.
+   * This method is now deprecated and will be removed in a future version.
+   * @deprecated Please use scrapeHomepage instead.
    */
   async scrapeByCategory(options: ScrapeOptions): Promise<ScrapeResult> {
+    console.warn(chalk.yellow('The scrapeByCategory method is deprecated and will be removed. Please use scrapeHomepage.'));
+    // Forward to scrapeHomepage, ignoring category.
+    const result = await this.scrapeHomepage(options);
+    return {
+      ...result,
+      category: options.category, // for backward compatibility of the return type
+    };
+  }
+
+  /**
+   * Main method to scrape Pinterest homepage
+   */
+  async scrapeHomepage(options: Pick<ScrapeOptions, 'limit'>): Promise<ScrapeResult> {
     const startTime = Date.now();
     
     try {
-      this.pinList = []; // Reset pin list
-      
-      // Initialize browser
       await this.initializeBrowser();
       
-      // Build search URL
-      const searchUrl = this.buildSearchUrl(options.category);
-      console.log(chalk.blue(`Navigating to: ${searchUrl}`));
+      this.pinList = []; // Reset pin list
       
-      // Navigate to Pinterest search
-      await this.driver!.get(searchUrl);
-      await this.driver!.manage().setTimeouts({ implicit: 3000 });
+      const baseUrl = process.env.PINTEREST_BASE_URL || 'https://pinterest.com/';
+      console.log(chalk.blue(`Navigating to: ${baseUrl}`));
       
-      // Determine scroll count based on limit
-      const scrollCount = this.determineScrollCount(options.limit || 20);
+      // Navigate to Pinterest home
+      await this.driver!.get(baseUrl);
+      await this.driver!.manage().setTimeouts({ implicit: 1500 });
       
-      // Perform scrolling and image collection
-      for (let i = 0; i < scrollCount; i++) {
-        try {
+      // Perform scrolling and image collection until the limit is reached
+      if (this.driver) {
+        let lastHeight = await this.driver.executeScript('return document.body.scrollHeight');
+        while (this.pinList.length < (options.limit || 20)) {
           await this.scrollAndCollect();
-          console.log(chalk.green(`Scroll ${i + 1}/${scrollCount} completed. Collected ${this.pinList.length} images`));
-          
-          // Break early if we have enough images
+          console.log(chalk.green(`Collected ${this.pinList.length} images so far...`));
+  
+          // Break if we have enough images
           if (this.pinList.length >= (options.limit || 20)) {
             break;
           }
-        } catch (error) {
-          console.warn(chalk.yellow(`Scroll ${i + 1} failed:`, (error as Error).message));
+  
+          const newHeight = await this.driver.executeScript('return document.body.scrollHeight');
+          if (newHeight === lastHeight) {
+            console.warn(chalk.yellow('No more content to load. Stopping scroll.'));
+            break; // Exit if the page height isn't changing, indicating no new content
+          }
+          lastHeight = newHeight;
         }
       }
-      
-      // Clean up browser
-      await this.cleanup();
       
       // Filter accessible images
       const accessibleImages = await this.filterAccessibleImages(this.pinList);
@@ -63,17 +85,13 @@ export default class PinterestService {
       // Apply limit
       const limitedImages = accessibleImages.slice(0, options.limit || 20);
       
-      const processingTime = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
-      
       return {
-        category: options.category,
         totalImages: limitedImages.length,
-        images: limitedImages,
-        processingTime
+        images: limitedImages
       };
       
     } catch (error) {
-      await this.cleanup();
+      // No longer quitting browser here to allow reuse
       throw new PinterestError(`Scraping failed: ${(error as Error).message}`);
     }
   }
@@ -81,21 +99,80 @@ export default class PinterestService {
   /**
    * Initialize browser with appropriate settings
    */
-  private async initializeBrowser(): Promise<void> {
+  private initializeBrowser(): Promise<void> {
+    if (!this.initializationPromise) {
+      console.log(chalk.yellow('Browser not initialized. Initializing...'));
+      this.initializationPromise = this._initializeBrowser();
+    }
+    return this.initializationPromise;
+  }
+
+  private async _initializeBrowser(): Promise<void> {
     const headless = process.env.CHROME_HEADLESS !== 'false';
+    const serviceBuilder = new chrome.ServiceBuilder('/opt/homebrew/bin/chromedriver');
 
-    const serviceBuilder = new chrome.ServiceBuilder('/usr/bin/chromedriver');
+    console.log(chalk.blue(`Initializing Chrome driver... Headless: ${headless}`));
 
-    this.driver = new Builder()
-      .forBrowser('chrome')
-      .setChromeService(serviceBuilder)
-      .setChromeOptions(
-        new chrome.Options()
-          .windowSize({ width: 1920, height: 1080 })
-          .addArguments(headless ? '--headless' : '')
-          .addArguments('--disable-gpu', '--log-level=3', '--no-sandbox', '--disable-dev-shm-usage')
-      )
-      .build();
+    try {
+      this.driver = new Builder()
+        .forBrowser('chrome')
+        .setChromeService(serviceBuilder)
+        .setChromeOptions(
+          new chrome.Options()
+            .windowSize({ width: 1920, height: 1080 })
+            .addArguments(headless ? '--headless' : '')
+            .addArguments('--disable-gpu', '--log-level=3', '--no-sandbox', '--disable-dev-shm-usage')
+        )
+        .build();
+      
+      console.log(chalk.green('Browser initialized successfully.'));
+      await this.login();
+    } catch (error) {
+      console.error(chalk.red('Failed to initialize browser:'), error);
+      this.initializationPromise = null; // Reset promise on failure
+      throw error;
+    }
+  }
+
+  /**
+   * Login to Pinterest
+   */
+  private async login(): Promise<void> {
+    const email = process.env.PINTEREST_EMAIL;
+    const password = process.env.PINTEREST_PASSWORD;
+
+    if (!email || !password) {
+      console.warn(chalk.yellow('Pinterest email or password not provided in .env file. Skipping login.'));
+      return;
+    }
+
+    if (!this.driver) throw new Error('Driver not initialized');
+
+    try {
+      console.log(chalk.blue('Navigating to Pinterest homepage...'));
+      await this.driver.get('https://www.pinterest.com/');
+      await this.driver.wait(until.elementLocated(By.xpath('//div[text()="Log in"]')), 15000);
+      const loginButton = await this.driver.findElement(By.xpath('//div[text()="Log in"]'));
+      await loginButton.click();
+
+      console.log(chalk.blue('Entering credentials...'));
+      await this.driver.wait(until.elementLocated(By.id('email')), 10000);
+      await this.driver.findElement(By.id('email')).sendKeys(email);
+      await this.driver.findElement(By.id('password')).sendKeys(password);
+      await this.driver.sleep(500);
+
+      console.log(chalk.blue('Submitting login form...'));
+      const submitButton = await this.driver.findElement(By.css('button[type="submit"]'));
+      await submitButton.click();
+      
+      await this.driver.wait(until.urlContains('/feed/'), 20000);
+      console.log(chalk.green('Login successful! Waiting for page to load...'));
+      await this.driver.sleep(5000); // Wait for the feed to load
+      
+    } catch (error) {
+      console.error(chalk.red('Failed to log in to Pinterest:'), error);
+      throw new PinterestError('Login failed. Please check your credentials and network connection.');
+    }
   }
 
   /**
@@ -108,34 +185,15 @@ export default class PinterestService {
   }
 
   /**
-   * Determine scroll count based on desired image limit
-   */
-  private determineScrollCount(limit: number): number {
-    const defaultScrollCount = parseInt(process.env.DEFAULT_SCROLL_COUNT || '2');
-    
-    if (limit <= 20) return defaultScrollCount;
-    if (limit <= 50) return Math.max(defaultScrollCount, 3);
-    if (limit <= 100) return Math.max(defaultScrollCount, 5);
-    
-    return Math.max(defaultScrollCount, 7);
-  }
-
-  /**
    * Scroll page and collect images
    */
   private async scrollAndCollect(): Promise<void> {
     if (!this.driver) throw new Error('Driver not initialized');
-    
-    // Scroll to bottom
-    await this.driver.executeScript("window.scrollTo(0, document.body.scrollHeight);");
-    await this.driver.sleep(3000); // Wait for content to load
-    
-    // Collect images from current page
+
+    // Scroll to bottom and collect
+    await this.driver.executeScript('window.scrollTo(0, document.body.scrollHeight);');
+    await this.driver.sleep(2000); // Wait for images to load
     await this.collectImagesFromPage();
-    
-    // Additional scroll for dynamic content
-    await this.driver.executeScript("window.scrollTo(0, document.body.scrollHeight);");
-    await this.driver.sleep(2000);
   }
 
   /**
@@ -143,22 +201,25 @@ export default class PinterestService {
    */
   private async collectImagesFromPage(): Promise<void> {
     if (!this.driver) return;
-    
+
     try {
-      const pageSource = await this.driver.getPageSource();
-      const pins = pageSource.match(/<img.*?src=["'](.*?)["']/g);
-      
-      if (pins) {
-        for (const pin of pins) {
-          const sourceMatch = pin.match(/src=["'](.*?)["']/);
-          if (sourceMatch) {
-            const source = sourceMatch[1];
-            
+      // Use a more specific and efficient selector for Pinterest image elements
+      const imageElements = await this.driver.findElements(By.css('img[src*="i.pinimg.com"]'));
+
+      for (const imageElement of imageElements) {
+        try {
+          const source = await imageElement.getAttribute('src');
+          if (source) {
             // Filter Pinterest images and avoid duplicates
             if (this.isPinterestImage(source) && !this.pinList.includes(source)) {
               const cleanedUrl = this.cleanImageUrl(source);
               this.pinList.push(cleanedUrl);
             }
+          }
+        } catch (error) {
+          if ((error as Error).name !== 'StaleElementReferenceError') {
+            // A stale element reference means the element was removed from the DOM. We can safely ignore this.
+            console.warn(chalk.yellow('Error getting image source:', (error as Error).message));
           }
         }
       }
@@ -228,7 +289,7 @@ export default class PinterestService {
   private async checkUrlAccessibility(url: string): Promise<boolean> {
     return new Promise((resolve) => {
       const request = url.startsWith('https') ? https : http;
-      const timeoutDuration = 5000; // 5 second timeout
+      const timeoutDuration = 2000; // 2 second timeout
       
       const req = request.request(url, { method: 'HEAD', timeout: timeoutDuration }, (res) => {
         resolve(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 400);
@@ -252,14 +313,23 @@ export default class PinterestService {
   /**
    * Clean up browser resources
    */
-  private async cleanup(): Promise<void> {
+  public async cleanup(): Promise<void> {
     if (this.driver) {
       try {
         await this.driver.quit();
         this.driver = null;
+        this.initializationPromise = null;
+        console.log(chalk.yellow('Browser instance cleaned up.'));
       } catch (error) {
         console.warn(chalk.yellow('Browser cleanup warning:', (error as Error).message));
       }
     }
+  }
+
+  /**
+   * Gracefully shuts down the browser instance
+   */
+  async shutdown(): Promise<void> {
+    await this.cleanup();
   }
 } 

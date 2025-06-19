@@ -1,87 +1,48 @@
 import { Request, Response } from 'express';
-import { ScrapeOptions, ScrapeResult, ApiResponse } from '../types/pinterest';
-import PinterestService from '../services/pinterestService';
+import { ScrapeResult, ApiResponse } from '../types/pinterest';
+import { FileService } from '../services/fileService';
 import chalk from 'chalk';
 
-export class ScrapeController {
-  private pinterestService: PinterestService;
+const FILENAME = 'top10_home.txt';
 
-  constructor() {
-    this.pinterestService = new PinterestService();
-  }
+export class ScrapeController {
+  constructor() {}
 
   /**
-   * POST /api/scrape - Scrape Pinterest images by category
+   * POST /api/scrape - Get scraped images
    */
-  async scrapeByCategory(req: Request, res: Response): Promise<void> {
+  async getImages(req: Request, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
-      const { category, limit, quality }: ScrapeOptions = req.body;
+      const { limit } = req.body;
 
-      // Validate request
-      if (!category || typeof category !== 'string' || category.trim().length === 0) {
-        const errorResponse: ApiResponse = {
-          success: false,
-          error: {
-            code: 'INVALID_CATEGORY',
-            message: 'The provided category is invalid or empty',
-            details: 'Category must be a non-empty string with alphanumeric characters',
-            timestamp: new Date().toISOString()
-          }
-        };
-        res.status(400).json(errorResponse);
-        return;
-      }
-
-      // Validate limit
-      const requestLimit = limit || parseInt(process.env.DEFAULT_IMAGE_LIMIT || '20');
-      const maxLimit = parseInt(process.env.MAX_IMAGES_PER_REQUEST || '100');
-      
-      if (requestLimit > maxLimit) {
-        const errorResponse: ApiResponse = {
-          success: false,
-          error: {
-            code: 'LIMIT_EXCEEDED',
-            message: `Requested image limit exceeds maximum allowed (${maxLimit})`,
-            details: `Please request ${maxLimit} or fewer images`,
-            timestamp: new Date().toISOString()
-          }
-        };
-        res.status(400).json(errorResponse);
-        return;
-      }
-
-      console.log(chalk.blue(`Starting scrape for category: ${category}, limit: ${requestLimit}`));
-
-      // Perform scraping
-      const result = await this.pinterestService.scrapeByCategory({
-        category: category.trim(),
-        limit: requestLimit,
-        quality: quality || 'high'
-      });
+      const allImages = FileService.read(FILENAME);
+      const requestLimit = limit || 10;
+      const images = allImages.slice(0, requestLimit);
 
       const processingTime = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
       
       const response: ApiResponse<ScrapeResult> = {
         success: true,
         data: {
-          ...result,
+          totalImages: images.length,
+          images: images,
           processingTime
         }
       };
 
-      console.log(chalk.green(`Scraping completed. Found ${result.totalImages} images in ${processingTime}`));
+      console.log(chalk.green(`Retrieved ${images.length} images from cache in ${processingTime}`));
       res.json(response);
 
     } catch (error) {
-      console.error(chalk.red('Scraping failed:'), error);
+      console.error(chalk.red('Failed to retrieve images from cache:'), error);
       
       const errorResponse: ApiResponse = {
         success: false,
         error: {
-          code: 'SCRAPING_FAILED',
-          message: 'Pinterest scraping operation failed',
+          code: 'CACHE_READ_FAILED',
+          message: 'Failed to read images from the cache',
           details: (error as Error).message,
           timestamp: new Date().toISOString()
         }
@@ -92,79 +53,39 @@ export class ScrapeController {
   }
 
   /**
-   * GET /api/scrape/:category - Alternative GET endpoint for category scraping
+   * GET /api/scrape - This endpoint will also use the cache
    */
-  async scrapeByCategoryGet(req: Request, res: Response): Promise<void> {
+  async getImagesGet(req: Request, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
-      const { category } = req.params;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const quality = req.query.quality as 'high' | 'medium' | 'low' | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
 
-      // Validate category
-      if (!category || category.trim().length === 0) {
-        const errorResponse: ApiResponse = {
-          success: false,
-          error: {
-            code: 'INVALID_CATEGORY',
-            message: 'The provided category is invalid or empty',
-            details: 'Category must be a non-empty string',
-            timestamp: new Date().toISOString()
-          }
-        };
-        res.status(400).json(errorResponse);
-        return;
-      }
-
-      // Validate limit
-      const requestLimit = limit || parseInt(process.env.DEFAULT_IMAGE_LIMIT || '20');
-      const maxLimit = parseInt(process.env.MAX_IMAGES_PER_REQUEST || '100');
-      
-      if (requestLimit > maxLimit) {
-        const errorResponse: ApiResponse = {
-          success: false,
-          error: {
-            code: 'LIMIT_EXCEEDED',
-            message: `Requested image limit exceeds maximum allowed (${maxLimit})`,
-            details: `Please request ${maxLimit} or fewer images`,
-            timestamp: new Date().toISOString()
-          }
-        };
-        res.status(400).json(errorResponse);
-        return;
-      }
-
-      console.log(chalk.blue(`Starting GET scrape for category: ${category}, limit: ${requestLimit}`));
-
-      // Perform scraping
-      const result = await this.pinterestService.scrapeByCategory({
-        category: category.trim(),
-        limit: requestLimit,
-        quality: quality || 'high'
-      });
+      const allImages = FileService.read(FILENAME);
+      const images = allImages.slice(0, limit);
 
       const processingTime = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
       
       const response: ApiResponse<ScrapeResult> = {
         success: true,
         data: {
-          ...result,
+          totalImages: images.length,
+          images: images,
           processingTime
         }
       };
 
-      console.log(chalk.green(`GET scraping completed. Found ${result.totalImages} images in ${processingTime}`));
+      console.log(chalk.green(`Retrieved ${images.length} images from cache in ${processingTime}`));
       res.json(response);
 
     } catch (error) {
-      console.error(chalk.red('GET scraping failed:'), error);
+      console.error(chalk.red('Failed to retrieve images from cache:'), error);
       
       const errorResponse: ApiResponse = {
         success: false,
         error: {
-          code: 'SCRAPING_FAILED',
-          message: 'Pinterest scraping operation failed',
+          code: 'CACHE_READ_FAILED',
+          message: 'Failed to read images from the cache',
           details: (error as Error).message,
           timestamp: new Date().toISOString()
         }
