@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Pinterest Scraper API
+  pinterest-scraper:
+    build: .
+    container_name: pinterest-scraper-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CHROME_HEADLESS=true
+      - DEFAULT_IMAGE_LIMIT=${DEFAULT_IMAGE_LIMIT:-20}
+      - MAX_IMAGES_PER_REQUEST=${MAX_IMAGES_PER_REQUEST:-100}
+      - PINTEREST_BASE_URL=${PINTEREST_BASE_URL:-https://pinterest.com/search/pins/?q=}
+      - DEFAULT_SCROLL_COUNT=${DEFAULT_SCROLL_COUNT:-2}
+      - websiteURL=${WEBSITE_URL}
+      - email=${PINTEREST_EMAIL}
+      - password=${PINTEREST_PASSWORD}
+      - scrollCount=${SCROLL_COUNT:-1}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - pinterest-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Nginx Reverse Proxy (uncomment if you want to use Nginx)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: pinterest-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./nginx/ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - pinterest-scraper
+  #   networks:
+  #     - pinterest-network
+
+networks:
+  pinterest-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local 

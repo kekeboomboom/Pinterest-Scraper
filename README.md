@@ -18,9 +18,8 @@ A RESTful HTTP API service for scraping Pinterest images by category. Transform 
 
 ### Installation
 
-```bash
 # Clone the repository
-git clone https://github.com/Bes-js/Pinterest-Scraper.git
+git clone https://github.com/kekeboomboom/Pinterest-Scraper.git
 cd Pinterest-Scraper
 
 # Install dependencies
@@ -303,11 +302,10 @@ If you find this project helpful, consider supporting the development:
 
 # Installation
 * **1 Download requirements**
-```shell
-git clone https://github.com/Bes-js/Pinterest-Scraper
+
+git clone https://github.com/kekeboomboom/Pinterest-Scraper.git
 cd Pinterest-Scraper
 npm install
-```
 
 * **2 Download ChromeDriver Or Google Chrome**
 

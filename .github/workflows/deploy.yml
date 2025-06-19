@@ -1,0 +1,102 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build project
+      run: npm run build
+
+    - name: Create deployment archive
+      run: |
+        tar -czf deploy.tar.gz \
+          dist/ \
+          package.json \
+          package-lock.json \
+          ecosystem.config.js
+
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # Navigate to app directory
+          cd /var/www/pinterest-scraper
+          
+          # Stop current application
+          pm2 stop pinterest-scraper || true
+          
+          # Backup current deployment
+          if [ -d "current" ]; then
+            mv current backup-$(date +%Y%m%d-%H%M%S)
+          fi
+          
+          # Create new deployment directory
+          mkdir -p current
+          
+    - name: Upload files
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        source: "deploy.tar.gz"
+        target: "/var/www/pinterest-scraper/"
+
+    - name: Extract and restart application
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          cd /var/www/pinterest-scraper
+          
+          # Extract files
+          tar -xzf deploy.tar.gz -C current/
+          rm deploy.tar.gz
+          
+          # Install production dependencies
+          cd current
+          npm ci --only=production
+          
+          # Create .env file from secrets
+          echo "PORT=${{ secrets.APP_PORT }}" > .env
+          echo "NODE_ENV=production" >> .env
+          echo "CHROME_HEADLESS=true" >> .env
+          echo "DEFAULT_IMAGE_LIMIT=${{ secrets.DEFAULT_IMAGE_LIMIT }}" >> .env
+          echo "MAX_IMAGES_PER_REQUEST=${{ secrets.MAX_IMAGES_PER_REQUEST }}" >> .env
+          echo "PINTEREST_BASE_URL=${{ secrets.PINTEREST_BASE_URL }}" >> .env
+          echo "DEFAULT_SCROLL_COUNT=${{ secrets.DEFAULT_SCROLL_COUNT }}" >> .env
+          echo "websiteURL=${{ secrets.WEBSITE_URL }}" >> .env
+          echo "email=${{ secrets.PINTEREST_EMAIL }}" >> .env
+          echo "password=${{ secrets.PINTEREST_PASSWORD }}" >> .env
+          echo "scrollCount=${{ secrets.SCROLL_COUNT }}" >> .env
+          
+          # Start application with PM2
+          pm2 start ecosystem.config.js
+          pm2 save 
