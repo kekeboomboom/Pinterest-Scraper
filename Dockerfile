@@ -1,6 +1,10 @@
 # Stage 1: Build the application
 FROM node:18-alpine AS builder
 
+# Set NODE_ENV to development to ensure devDependencies are installed
+ARG NODE_ENV=development
+ENV NODE_ENV=${NODE_ENV}
+
 WORKDIR /app
 
 # Copy package files and install all dependencies
