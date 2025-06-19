@@ -120,7 +120,7 @@ export default class PinterestService {
         .setChromeOptions(
           new chrome.Options()
             .windowSize({ width: 1920, height: 1080 })
-            .addArguments(headless ? '--headless' : '')
+            .addArguments(...(headless ? ['--headless'] : []))
             .addArguments('--disable-gpu', '--log-level=3', '--no-sandbox', '--disable-dev-shm-usage')
         )
         .build();
