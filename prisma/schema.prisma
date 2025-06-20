@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  apiKey    String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  scrapeJobs ScrapeJob[]
+  apiCalls   ApiCall[]
+
+  @@map("users")
+}
+
+model ScrapeJob {
+  id          String       @id @default(cuid())
+  userId      String
+  category    String
+  imageCount  Int          @default(20)
+  quality     ImageQuality @default(MEDIUM)
+  status      JobStatus    @default(PENDING)
+  progress    Float        @default(0)
+  results     Json?        // Stores scraped image data
+  error       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  completedAt DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("scrape_jobs")
+}
+
+model CachedResult {
+  id        String       @id @default(cuid())
+  category  String
+  quality   ImageQuality
+  data      Json         // Cached scraping results
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+
+  @@unique([category, quality])
+  @@map("cached_results")
+}
+
+model ApiCall {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String
+  method     String
+  statusCode Int
+  duration   Int      // in milliseconds
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_calls")
+}
+
+model SystemStat {
+  id            String   @id @default(cuid())
+  totalJobs     Int      @default(0)
+  successfulJobs Int     @default(0)
+  failedJobs    Int      @default(0)
+  totalImages   Int      @default(0)
+  uptime        Int      @default(0) // in seconds
+  lastReset     DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("system_stats")
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ImageQuality {
+  ORIGINAL
+  HIGH
+  MEDIUM
+  LOW
+}
